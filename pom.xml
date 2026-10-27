@@ -21,6 +21,7 @@
     <module>kafka-streaming</module>
     <module>file-ingestion</module>
     <module>dataflow-beam</module>
+    <module>data-products</module>
   </modules>
 
   <properties>

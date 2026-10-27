@@ -16,7 +16,7 @@ os.environ.setdefault("CMA_ENV", "dev")
 airflow = pytest.importorskip("airflow")
 from airflow.models import DagBag  # noqa: E402
 
-EXPECTED = {"cma_deals_gcp", "cma_deals_hadoop", "cma_stream_health", "cma_hive_to_bq_migration"}
+EXPECTED = {"cma_deals_gcp", "cma_deals_hadoop", "cma_stream_health", "cma_hive_to_bq_migration", "cma_data_products"}
 
 
 @pytest.fixture(scope="module")
@@ -62,3 +62,9 @@ def test_bigquery_sql_includes_resolve(dagbag):
         query = dag.get_task(task_id).configuration["query"]["query"]
         rendered = env.from_string(query).render(params={"project": "p"}, ds="2026-10-26", run_id="r")
         assert "`p." in rendered and "{{" not in rendered
+
+
+def test_data_products_dependencies(dagbag):
+    dag = dagbag.get_dag("cma_data_products")
+    assert dag.get_task("pit_features").upstream_task_ids == {"wait_for_deals", "party_master", "vendor_ratings"}
+    assert dag.get_task("break_reconciliation").upstream_task_ids == {"wait_for_deals"}

@@ -1,0 +1,8 @@
+party_id,agency,rating,outlook,rated_on
+PTY-001,S&P,BBB+,Stable,2026-10-20
+PTY-001,Moody's,Baa2,Stable,2026-09-14
+PTY-002,S&P,A-,Positive,2026-10-22
+PTY-003,Fitch,BB,Negative,2026-10-01
+PTY-004,S&P,BB-,Stable,2026-08-30
+PTY-005,Fitch,AA-,Stable,2026-10-24
+PTY-006,S&P,,Stable,2026-10-24

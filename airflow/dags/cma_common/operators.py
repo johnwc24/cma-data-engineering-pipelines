@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from airflow.exceptions import AirflowException, AirflowFailException
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
-from airflow.providers.google.cloud.operators.dataproc import DataprocSubmitJobOperator
+from airflow.providers.google.cloud.operators.dataproc import DataprocCreateBatchOperator, DataprocSubmitJobOperator
 
 from cma_common.exit_codes import NON_RETRYABLE_EXIT_CODES, exit_code_from
 
@@ -36,6 +36,16 @@ class FailFastSparkSubmitOperator(SparkSubmitOperator):
 
 class FailFastDataprocSubmitJobOperator(DataprocSubmitJobOperator):
     """Dataproc job submit; data errors are not retried."""
+
+    def execute(self, context):  # noqa: ANN001
+        try:
+            return super().execute(context)
+        except AirflowException as exc:
+            reraise_with_retry_policy(exc)
+
+
+class FailFastDataprocCreateBatchOperator(DataprocCreateBatchOperator):
+    """Dataproc Serverless batch; data errors are not retried."""
 
     def execute(self, context):  # noqa: ANN001
         try:

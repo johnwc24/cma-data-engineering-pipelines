@@ -9,7 +9,7 @@
   gather_facts: false
   vars:
     cma_base_dir: /opt/cma
-    modules: [hadoop-batch, kafka-streaming, file-ingestion]
+    modules: [hadoop-batch, kafka-streaming, file-ingestion, data-products]
   tasks:
     - name: Roll back Hadoop
       when: (target | default('both')) in ['both', 'hadoop']
@@ -38,7 +38,7 @@
   hosts: gcp_control
   gather_facts: false
   vars:
-    modules: [gcp-dataproc, kafka-streaming, file-ingestion]
+    modules: [gcp-dataproc, kafka-streaming, file-ingestion, data-products]
   tasks:
     - name: Roll back GCP
       when: (target | default('both')) in ['both', 'gcp']

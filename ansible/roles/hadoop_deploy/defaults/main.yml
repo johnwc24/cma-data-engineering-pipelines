@@ -6,6 +6,7 @@ hadoop_modules:
   - hadoop-batch
   - kafka-streaming
   - file-ingestion
+  - data-products
 keep_releases: 5
 streaming_app_name: "cma-deal-stream-hive-{{ cma_env }}"
 streaming_main_class: com.example.cma.streaming.KafkaToHiveStreamingJob

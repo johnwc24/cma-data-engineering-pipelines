@@ -1,0 +1,2 @@
+# Vendor sample files are checksummed by their manifest: never rewrite line endings
+data/sample/landing/vendor/** -text

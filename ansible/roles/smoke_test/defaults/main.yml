@@ -28,3 +28,4 @@ expected_dags:
   - cma_deals_hadoop
   - cma_stream_health
   - cma_hive_to_bq_migration
+  - cma_data_products

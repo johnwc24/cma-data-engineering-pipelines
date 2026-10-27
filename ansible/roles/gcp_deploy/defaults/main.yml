@@ -3,6 +3,7 @@ gcp_modules:
   - gcp-dataproc
   - kafka-streaming
   - file-ingestion
+  - data-products
 work_dir: "/tmp/cma-deploy-{{ release_version }}"
 repo_root: "{{ playbook_dir }}/../.."
 streaming_job_label: cma-deal-stream-bq
