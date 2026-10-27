@@ -1,0 +1,52 @@
+# Per-environment settings for the CMA DAGs. The environment is chosen by the
+# CMA_ENV variable set on the Composer / Airflow environment (not at DAG parse time from the DB).
+dev:
+  gcp:
+    project: cma-data-dev
+    region: europe-west2
+    landing_bucket: cma-data-dev-landing
+    artifacts_bucket: cma-data-dev-artifacts
+    subnetwork: projects/cma-data-dev/regions/europe-west2/subnetworks/dataproc
+    service_account: dataproc-cma@cma-data-dev.iam.gserviceaccount.com
+    cluster_workers: 2
+  hadoop:
+    spark_conn_id: spark_yarn_dev
+    webhdfs_conn_id: webhdfs_dev
+    landing_path: /data/cma/dev/landing/deals
+    jar: /opt/cma/hadoop-batch/current/hadoop-batch-all.jar
+  alert_emails: [cma-data-eng-dev@example.com]
+  sla_hours: 6
+
+uat:
+  gcp:
+    project: cma-data-uat
+    region: europe-west2
+    landing_bucket: cma-data-uat-landing
+    artifacts_bucket: cma-data-uat-artifacts
+    subnetwork: projects/cma-data-uat/regions/europe-west2/subnetworks/dataproc
+    service_account: dataproc-cma@cma-data-uat.iam.gserviceaccount.com
+    cluster_workers: 2
+  hadoop:
+    spark_conn_id: spark_yarn_uat
+    webhdfs_conn_id: webhdfs_uat
+    landing_path: /data/cma/uat/landing/deals
+    jar: /opt/cma/hadoop-batch/current/hadoop-batch-all.jar
+  alert_emails: [cma-data-eng@example.com]
+  sla_hours: 4
+
+prod:
+  gcp:
+    project: cma-data-prod
+    region: europe-west2
+    landing_bucket: cma-data-prod-landing
+    artifacts_bucket: cma-data-prod-artifacts
+    subnetwork: projects/cma-data-prod/regions/europe-west2/subnetworks/dataproc
+    service_account: dataproc-cma@cma-data-prod.iam.gserviceaccount.com
+    cluster_workers: 4
+  hadoop:
+    spark_conn_id: spark_yarn_prod
+    webhdfs_conn_id: webhdfs_prod
+    landing_path: /data/cma/prod/landing/deals
+    jar: /opt/cma/hadoop-batch/current/hadoop-batch-all.jar
+  alert_emails: [cma-data-eng@example.com, cma-prod-support@example.com]
+  sla_hours: 3

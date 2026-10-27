@@ -1,0 +1,10 @@
+# Mirrors Cloud Composer 2 (Airflow 2.9). Install with the official constraints file:
+#   pip install -r airflow/requirements-dev.txt \
+#     --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
+apache-airflow==2.9.3
+apache-airflow-providers-google
+apache-airflow-providers-apache-spark
+apache-airflow-providers-apache-hdfs
+pytest
+pyyaml
+ruff

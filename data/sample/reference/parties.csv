@@ -1,0 +1,11 @@
+party_id,legal_name,lei,country_code,sector,is_active
+PTY-001,Acme Holdings plc,5493001KJTIIGC8Y1R01,GB,Industrials,true
+PTY-002,Globex SA,5493001KJTIIGC8Y1R02,FR,Utilities,true
+PTY-003,Initech Inc,5493001KJTIIGC8Y1R03,US,Technology,true
+PTY-004,Umbrella Group Ltd,5493001KJTIIGC8Y1R04,GB,Healthcare,true
+PTY-005,Wayne Enterprises Inc,5493001KJTIIGC8Y1R05,US,Industrials,true
+PTY-006,Cyberdyne Systems Corp,5493001KJTIIGC8Y1R06,US,Technology,true
+PTY-007,Soylent Foods NV,5493001KJTIIGC8Y1R07,NL,Consumer Staples,true
+PTY-008,Tyrell Corp,5493001KJTIIGC8Y1R08,US,Technology,true
+PTY-009,Hooli Inc,5493001KJTIIGC8Y1R09,US,Technology,true
+PTY-010,Initrode Ltd,5493001KJTIIGC8Y1R10,GB,Financials,false

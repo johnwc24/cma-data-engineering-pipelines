@@ -1,0 +1,13 @@
+target/
+*.class
+.idea/
+*.iml
+.bsp/
+.metals/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+spark-warehouse/
+metastore_db/
+derby.log
