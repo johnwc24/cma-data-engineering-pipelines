@@ -1,0 +1,8 @@
+---
+# Environment-level variables (gcp_project, cma_env, release_version, ...) are deliberately
+# shared by the deploy, rollback and smoke-test roles, so role-prefixed names don't apply.
+profile: production
+skip_list:
+  - var-naming[no-role-prefix]
+exclude_paths:
+  - inventories/

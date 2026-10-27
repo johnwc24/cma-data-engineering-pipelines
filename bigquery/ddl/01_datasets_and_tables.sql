@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `{{ project }}.cma_curated.deal_history` (
   deal_amount NUMERIC(20, 2) NOT NULL, bank_share_amount NUMERIC(20, 2), bank_share_pct NUMERIC(9, 4),
   fx_rate_to_usd NUMERIC(18, 8), deal_amount_usd NUMERIC(20, 2), bank_share_usd NUMERIC(20, 2),
   trade_date DATE NOT NULL, settlement_date DATE, booking_system STRING, deal_status STRING,
-  row_hash STRING NOT NULL OPTIONS (description = 'Hash of tracked attributes; change => new version'),
+  row_hash STRING NOT NULL OPTIONS (description = 'Hash of tracked attributes - a change creates a new version'),
   valid_from DATE NOT NULL, valid_to DATE NOT NULL, is_current BOOL NOT NULL,
   source_system STRING, run_id STRING, updated_at TIMESTAMP
 )

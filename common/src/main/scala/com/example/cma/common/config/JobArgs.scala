@@ -44,6 +44,7 @@ object JobArgs {
           .action((v, c) => c.copy(configFile = Some(v)))
           .text("optional external HOCON file layered over the bundled config"),
         opt[Map[String, String]]("conf")
+          .unbounded() // may be repeated; later values win
           .valueName("k1=v1,k2=v2")
           .action((v, c) => c.copy(overrides = c.overrides ++ v))
           .text("config overrides"),

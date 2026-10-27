@@ -61,11 +61,11 @@ class GcsToBigQuery(warehouse: WarehouseIO.Factory) extends SparkJob {
     val curated = result.curated.cache()
 
     val gate  = DataQuality.evaluate("deal_staging", curated, DealRules.curatedGate(parties, conf.getLong("dq.min-rows")))
-    val dqAll = DqReport("deal", result.validationReport.results ++ gate.results)
 
     if (!args.dryRun) {
       bq.overwritePartition(result.rejected, bq.table("quarantine", "deal_reject"), "business_date", bd)
-      bq.append(dqAll.toDataFrame(spark, args.runId, bd.toString), bq.table("audit", "dq_results"))
+      bq.append(result.validationReport.toDataFrame(spark, args.runId, bd.toString)
+          .unionByName(gate.toDataFrame(spark, args.runId, bd.toString)), bq.table("audit", "dq_results"))
     }
 
     for {

@@ -87,12 +87,12 @@ object DealIngestionJob extends SparkJob {
     val curated = result.curated.cache()
 
     val gate = DataQuality.evaluate("deal_curated", curated, DealRules.curatedGate(parties, conf.getLong("dq.min-rows")))
-    val dqAll = DqReport("deal", result.validationReport.results ++ gate.results)
 
     // Rejects and DQ results are written even when the gate fails, so the data owner can see why.
     if (!args.dryRun) {
       write("rejects", retry)(store.writeRejects(result.rejected))
-      write("dq-results", retry)(store.appendAudit("dq-results", dqAll.toDataFrame(spark, args.runId, bd.toString)))
+      write("dq-results", retry)(store.appendAudit("dq-results", result.validationReport.toDataFrame(spark, args.runId, bd.toString)
+          .unionByName(gate.toDataFrame(spark, args.runId, bd.toString))))
     }
 
     for {
