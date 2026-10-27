@@ -11,12 +11,28 @@ import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import scala.util.control.NonFatal
 
 /**
+ * Warehouse operations the GCP jobs need. BigQueryIO is the real implementation;
+ * tests use an in-memory one so the jobs run locally without Google Cloud.
+ */
+trait WarehouseIO {
+  def table(datasetKey: String, name: String): String
+  def read(table: String, filter: Option[String] = None): DataFrame
+  def overwritePartition(df: DataFrame, table: String, partitionField: String, day: LocalDate): Unit
+  def append(df: DataFrame, table: String): Unit
+}
+
+object WarehouseIO {
+  type Factory = (SparkSession, Config, RetryPolicy) => WarehouseIO
+  val bigQuery: Factory = (spark, conf, retry) => new BigQueryIO(spark, conf, retry)
+}
+
+/**
  * Thin wrapper over the spark-bigquery connector that adds:
  *  - fully-qualified table naming per environment
  *  - partition-scoped overwrite (re-runs replace one day, never the whole table)
  *  - retry on transient BigQuery/GCS errors, fail-fast on permanent ones
  */
-final class BigQueryIO(spark: SparkSession, conf: Config, retry: RetryPolicy) {
+final class BigQueryIO(spark: SparkSession, conf: Config, retry: RetryPolicy) extends WarehouseIO {
   private val project    = conf.getString("gcp.project")
   private val tempBucket = conf.getString("gcs.temp-bucket")
   private val method     = conf.getString("bigquery.write-method")

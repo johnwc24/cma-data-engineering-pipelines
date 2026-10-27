@@ -1,0 +1,18 @@
+---
+# Post-deployment smoke tests for DEV, UAT and PROD (PROD runs read-only).
+#   ansible-playbook -i inventories/<env> playbooks/smoke_test.yml [-e release_version=1.4.2] [-e target=gcp]
+# Jenkins runs this after every deployment; a failure there triggers the automatic rollback.
+
+- name: Smoke test Hadoop edge nodes
+  hosts: hadoop_edge
+  gather_facts: true
+  gather_subset: [date_time]
+  roles:
+    - smoke_test
+
+- name: Smoke test Google Cloud
+  hosts: gcp_control
+  gather_facts: true
+  gather_subset: [date_time]
+  roles:
+    - smoke_test

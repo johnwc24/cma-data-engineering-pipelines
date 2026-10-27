@@ -1,0 +1,96 @@
+---
+# Deploys a release to the Hadoop edge nodes:
+#   download jars -> versioned release dir -> Hive DDL -> atomic symlink switch -> restart stream
+# Any failure after the switch restores the previous symlink (block/rescue).
+
+- name: Record the currently deployed release for rollback
+  ansible.builtin.stat:
+    path: "{{ cma_base_dir }}/{{ item }}/current"
+  loop: "{{ hadoop_modules }}"
+  register: current_links
+
+- name: Create versioned release directories
+  ansible.builtin.file:
+    path: "{{ cma_base_dir }}/{{ item }}/releases/{{ release_version }}"
+    state: directory
+    owner: "{{ cma_user }}"
+    group: "{{ cma_group }}"
+    mode: "0755"
+  loop: "{{ hadoop_modules }}"
+
+- name: Download job jars from Nexus
+  ansible.builtin.get_url:
+    url: "{{ nexus_repository_url }}/com/example/cma/{{ item }}/{{ release_version }}/{{ item }}-{{ release_version }}-all.jar"
+    dest: "{{ cma_base_dir }}/{{ item }}/releases/{{ release_version }}/{{ item }}-all.jar"
+    url_username: "{{ lookup('ansible.builtin.env', 'NEXUS_USER') }}"
+    url_password: "{{ lookup('ansible.builtin.env', 'NEXUS_PASS') }}"
+    owner: "{{ cma_user }}"
+    group: "{{ cma_group }}"
+    mode: "0644"
+    timeout: 120
+  register: jar_download
+  retries: 3
+  delay: 10
+  until: jar_download is succeeded
+  loop: "{{ hadoop_modules }}"
+
+- name: Deploy release (rolls back automatically on failure)
+  block:
+    - name: Copy Hive DDL
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../hadoop-batch/src/main/resources/hive/ddl.hql"
+        dest: "{{ cma_base_dir }}/hadoop-batch/releases/{{ release_version }}/ddl.hql"
+        mode: "0644"
+      run_once: true
+
+    - name: Apply Hive DDL (idempotent, IF NOT EXISTS)
+      ansible.builtin.command:
+        cmd: >-
+          beeline -u "{{ hive_jdbc_url }}" --silent=true
+          --hivevar env_suffix={{ hive_env_suffix }}
+          -f {{ cma_base_dir }}/hadoop-batch/releases/{{ release_version }}/ddl.hql
+      run_once: true
+      changed_when: false
+
+    - name: Switch current symlink to the new release
+      ansible.builtin.file:
+        src: "{{ cma_base_dir }}/{{ item }}/releases/{{ release_version }}"
+        dest: "{{ cma_base_dir }}/{{ item }}/current"
+        state: link
+        force: true
+      loop: "{{ hadoop_modules }}"
+
+    - name: Write previous-release marker for the rollback playbook
+      ansible.builtin.copy:
+        content: "{{ item.stat.lnk_target | default('') }}\n"
+        dest: "{{ cma_base_dir }}/{{ item.item }}/previous"
+        mode: "0644"
+      loop: "{{ current_links.results }}"
+      when: item.stat.exists and item.stat.islnk
+
+    - name: Restart the Kafka -> Hive streaming job
+      ansible.builtin.include_tasks: restart_streaming.yml
+      when: restart_streaming | bool
+
+  rescue:
+    - name: Restore previous symlinks
+      ansible.builtin.file:
+        src: "{{ item.stat.lnk_target }}"
+        dest: "{{ cma_base_dir }}/{{ item.item }}/current"
+        state: link
+        force: true
+      loop: "{{ current_links.results }}"
+      when: item.stat.exists and item.stat.islnk
+
+    - name: Fail the play so Jenkins reports the failed deployment
+      ansible.builtin.fail:
+        msg: "Deployment of {{ release_version }} failed on {{ inventory_hostname }}; previous release restored."
+
+- name: Prune old releases
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      ls -1dt {{ cma_base_dir }}/{{ item }}/releases/* | tail -n +{{ keep_releases + 1 }} | xargs -r rm -rf
+    executable: /bin/bash
+  loop: "{{ hadoop_modules }}"
+  changed_when: false

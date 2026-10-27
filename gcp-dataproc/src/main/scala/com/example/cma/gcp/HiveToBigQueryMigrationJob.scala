@@ -29,7 +29,9 @@ import scala.util.{Failure, Success, Try}
  * Runs on a Dataproc cluster configured with the on-prem (or Dataproc Metastore)
  * Hive metastore, so the Hadoop tables are visible to Spark.
  */
-object HiveToBigQueryMigrationJob extends SparkJob {
+class HiveToBigQueryMigration(warehouse: WarehouseIO.Factory) extends SparkJob {
+  import HiveToBigQueryMigrationJob.fingerprint
+
   val appName        = "cma-hive-to-bq-migration"
   val configResource = "gcp-dataproc"
   override val requiredConfig: Seq[String] = Seq("gcp.project", "gcs.temp-bucket", "migration.tables")
@@ -42,7 +44,7 @@ object HiveToBigQueryMigrationJob extends SparkJob {
 
   def run(spark: SparkSession, args: JobArgs, conf: Config): Either[PipelineError, JobSummary] = {
     val retry = RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms"))
-    val bq    = new BigQueryIO(spark, conf, retry)
+    val bq    = warehouse(spark, conf, retry)
     val days  = (0 to conf.getInt("migration.days-back")).map(n => args.businessDate.minusDays(n.toLong))
     val specs = conf.getConfigList("migration.tables").asScala.map { t =>
       TableSpec(t.getString("source"), t.getString("target"), t.getString("partition-column"), t.getString("amount-column"))
@@ -71,7 +73,7 @@ object HiveToBigQueryMigrationJob extends SparkJob {
 
   private def migratePartition(
       spark: SparkSession,
-      bq: BigQueryIO,
+      bq: WarehouseIO,
       spec: TableSpec,
       day: LocalDate,
       dryRun: Boolean
@@ -85,6 +87,7 @@ object HiveToBigQueryMigrationJob extends SparkJob {
       else {
         bq.overwritePartition(source, target, spec.partitionColumn, day)
         val written = bq.read(target, Some(s"${spec.partitionColumn} = DATE '$day'"))
+          .filter(col(spec.partitionColumn) === lit(Date.valueOf(day))) // belt and braces over the pushed-down filter
         val tgt     = fingerprint(written.select(source.columns.map(col): _*), spec.amountColumn)
         Reconciliation.check(
           s"${spec.target}@$day",
@@ -109,7 +112,10 @@ object HiveToBigQueryMigrationJob extends SparkJob {
         PartitionOutcome(spec.source, day, 0, s"FAILED_${err.category}", err.message)
     }
   }
+}
 
+/** Production entry point; also hosts the reusable fingerprint function. */
+object HiveToBigQueryMigrationJob extends HiveToBigQueryMigration(WarehouseIO.bigQuery) {
   final case class Fingerprint(rows: Long, amount: BigDecimal, checksum: BigDecimal)
 
   /**

@@ -1,0 +1,11 @@
+---
+cma_base_dir: /opt/cma
+cma_user: cma-svc
+cma_group: cma
+hadoop_modules:
+  - hadoop-batch
+  - kafka-streaming
+keep_releases: 5
+streaming_app_name: "cma-deal-stream-hive-{{ cma_env }}"
+streaming_main_class: com.example.cma.streaming.KafkaToHiveStreamingJob
+restart_streaming: true

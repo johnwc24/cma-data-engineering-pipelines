@@ -1,0 +1,12 @@
+---
+- name: Run Hadoop smoke tests
+  ansible.builtin.include_tasks: hadoop.yml
+  when:
+    - "'hadoop_edge' in group_names"
+    - (target | default('both')) in ['both', 'hadoop']
+
+- name: Run Google Cloud smoke tests
+  ansible.builtin.include_tasks: gcp.yml
+  when:
+    - "'gcp_control' in group_names"
+    - (target | default('both')) in ['both', 'gcp']

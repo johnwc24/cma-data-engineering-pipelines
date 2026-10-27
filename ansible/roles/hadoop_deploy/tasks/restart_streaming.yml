@@ -1,0 +1,50 @@
+---
+# Graceful restart of the Kafka -> Hive streaming job on YARN.
+# The query resumes from its HDFS checkpoint, so no events are lost or duplicated.
+
+- name: Find the running streaming application
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      yarn application -list -appStates RUNNING 2>/dev/null
+      | awk -v n="{{ streaming_app_name }}" '$2 == n {print $1}'
+    executable: /bin/bash
+  register: running_app
+  changed_when: false
+  run_once: true
+
+- name: Stop the running application
+  ansible.builtin.command:
+    cmd: "yarn application -kill {{ item }}"
+  loop: "{{ running_app.stdout_lines }}"
+  run_once: true
+  changed_when: true
+
+- name: Submit the new streaming application
+  ansible.builtin.command:
+    cmd: >-
+      spark-submit --master yarn --deploy-mode cluster
+      --name {{ streaming_app_name }}
+      --queue {{ spark_queue }}
+      --class {{ streaming_main_class }}
+      --principal cma-svc --keytab {{ kafka_keytab_path }}
+      --conf spark.yarn.maxAppAttempts=4
+      --conf spark.yarn.am.attemptFailuresValidityInterval=1h
+      --conf spark.sql.streaming.stopGracefullyOnShutdown=true
+      {{ cma_base_dir }}/kafka-streaming/current/kafka-streaming-all.jar
+      --env {{ cma_env }}
+  run_once: true
+  changed_when: true
+
+- name: Wait for the application to reach RUNNING
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      yarn application -list -appStates RUNNING 2>/dev/null | awk -v n="{{ streaming_app_name }}" '$2 == n' | wc -l
+    executable: /bin/bash
+  register: app_running
+  until: app_running.stdout | int == 1
+  retries: 20
+  delay: 15
+  run_once: true
+  changed_when: false

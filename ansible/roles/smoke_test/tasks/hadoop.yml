@@ -1,0 +1,72 @@
+---
+# Hadoop smoke tests. Everything here is read-only: the Spark job runs with --dry-run,
+# which reads, transforms and runs the DQ gate but skips every write.
+
+- name: "[hadoop] Deployed release is the expected one"
+  ansible.builtin.stat:
+    path: "{{ cma_base_dir }}/hadoop-batch/current"
+  register: current_link
+  failed_when: >-
+    not current_link.stat.exists or
+    (release_version is defined and release_version not in (current_link.stat.lnk_target | default('')))
+
+- name: "[hadoop] Curated, quarantine and audit Hive tables exist"
+  ansible.builtin.command:
+    cmd: beeline -u "{{ hive_jdbc_url }}" --silent=true --outputformat=csv2 -e "DESCRIBE {{ item }}"
+  loop: "{{ hive_tables }}"
+  run_once: true
+  changed_when: false
+
+- name: "[hadoop] Kafka -> Hive streaming application is RUNNING on YARN"
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      yarn application -list -appStates RUNNING 2>/dev/null | awk -v n="{{ streaming_app_name }}" '$2 == n' | wc -l
+    executable: /bin/bash
+  register: stream_running
+  run_once: true
+  changed_when: false
+  failed_when: stream_running.stdout | int != 1
+
+- name: "[hadoop] Stream committed a micro-batch recently"
+  ansible.builtin.command:
+    cmd: >-
+      beeline -u "{{ hive_jdbc_url }}" --silent=true --outputformat=csv2 --showHeader=false -e
+      "SELECT CAST((unix_timestamp() - unix_timestamp(MAX(committed_at))) / 60 AS INT)
+       FROM cma_audit{{ hive_env_suffix }}.stream_batch"
+  register: stream_lag
+  run_once: true
+  changed_when: false
+  failed_when: stream_lag.stdout | trim | int > max_stream_lag_minutes
+
+- name: "[hadoop] Last daily batch run succeeded recently"
+  ansible.builtin.command:
+    cmd: >-
+      beeline -u "{{ hive_jdbc_url }}" --silent=true --outputformat=csv2 --showHeader=false -e
+      "SELECT status, CAST((unix_timestamp() - unix_timestamp(finished_at)) / 3600 AS INT)
+       FROM cma_audit{{ hive_env_suffix }}.pipeline_run ORDER BY finished_at DESC LIMIT 1"
+  register: last_run
+  run_once: true
+  changed_when: false
+  failed_when: >-
+    last_run.stdout | trim | length == 0 or
+    (last_run.stdout | trim).split(',')[0] != 'SUCCEEDED' or
+    (last_run.stdout | trim).split(',')[1] | int > max_batch_age_hours
+
+- name: "[hadoop] Dry run of the deal ingestion job on {{ smoke_business_date }}"
+  ansible.builtin.command:
+    cmd: >-
+      spark-submit --master yarn --deploy-mode client --queue {{ spark_queue }}
+      --class com.example.cma.hadoop.DealIngestionJob
+      {{ cma_base_dir }}/hadoop-batch/current/hadoop-batch-all.jar
+      --env {{ cma_env }} --business-date {{ smoke_business_date }} --run-id smoke-{{ ansible_date_time.epoch }} --dry-run
+  register: dry_run
+  run_once: true
+  changed_when: false
+  # 0 = ok; 3 = no landing file for that date (reported, not failed); 5 = DQ gate would block
+  failed_when: dry_run.rc not in [0, 3]
+
+- name: "[hadoop] Report dry-run outcome"
+  ansible.builtin.debug:
+    msg: "Dry run exit code {{ dry_run.rc }}{{ ' (no landing data for ' ~ smoke_business_date ~ ')' if dry_run.rc == 3 else '' }}"
+  run_once: true

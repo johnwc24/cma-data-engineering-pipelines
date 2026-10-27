@@ -1,0 +1,31 @@
+---
+# Full deployment of one release to one environment.
+#   ansible-playbook -i inventories/<env> playbooks/site.yml -e release_version=1.4.2 [-e target=hadoop|gcp|both]
+
+- name: Validate deployment inputs
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require a release version
+      ansible.builtin.assert:
+        that:
+          - release_version is defined
+          - release_version | length > 0
+          - (target | default('both')) in ['both', 'hadoop', 'gcp']
+        fail_msg: "Pass -e release_version=<version> and optionally -e target=both|hadoop|gcp"
+
+- name: Deploy to Hadoop edge nodes
+  hosts: hadoop_edge
+  become: true
+  gather_facts: false
+  serial: 1  # one edge node at a time: the others keep serving if one fails
+  roles:
+    - role: hadoop_deploy
+      when: (target | default('both')) in ['both', 'hadoop']
+
+- name: Deploy to Google Cloud
+  hosts: gcp_control
+  gather_facts: false
+  roles:
+    - role: gcp_deploy
+      when: (target | default('both')) in ['both', 'gcp']

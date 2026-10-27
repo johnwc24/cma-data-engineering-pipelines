@@ -18,7 +18,7 @@ import org.apache.spark.sql.functions._
  * spark-submit --master yarn --deploy-mode cluster --supervise \
  *   --class com.example.cma.streaming.KafkaToHiveStreamingJob kafka-streaming-all.jar --env prod
  */
-object KafkaToHiveStreamingJob extends StreamingDealJob {
+class KafkaToHiveStreaming extends StreamingDealJob {
   val appName        = "cma-deal-stream-hive"
   val configResource = "kafka-hadoop"
 
@@ -64,3 +64,6 @@ object KafkaToHiveStreamingJob extends StreamingDealJob {
     append(spark, row, t(conf, "batch-ledger"))
   }
 }
+
+/** Production entry point (spark main class). */
+object KafkaToHiveStreamingJob extends KafkaToHiveStreaming

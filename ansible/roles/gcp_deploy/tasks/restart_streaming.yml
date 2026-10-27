@@ -1,0 +1,29 @@
+---
+# Restart the Dataproc streaming job. It resumes from its GCS checkpoint, so nothing is lost.
+
+- name: Find running streaming jobs
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataproc jobs list --project {{ gcp_project }} --region {{ gcp_region }}
+      --cluster {{ dataproc_streaming_cluster }} --state-filter active
+      --filter "labels.app={{ streaming_job_label }}" --format "value(reference.jobId)"
+  register: running_jobs
+  changed_when: false
+
+- name: Cancel running streaming jobs
+  ansible.builtin.command:
+    cmd: "gcloud dataproc jobs kill {{ item }} --project {{ gcp_project }} --region {{ gcp_region }} --quiet"
+  loop: "{{ running_jobs.stdout_lines }}"
+  changed_when: true
+
+- name: Submit the new streaming job (Dataproc restarts the driver on failure)
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataproc jobs submit spark --async
+      --project {{ gcp_project }} --region {{ gcp_region }} --cluster {{ dataproc_streaming_cluster }}
+      --class {{ streaming_main_class }}
+      --jars gs://{{ gcp_artifacts_bucket }}/jars/kafka-streaming/current/kafka-streaming-all.jar
+      --labels app={{ streaming_job_label }},release={{ release_version | replace('.', '-') | lower }}
+      --max-failures-per-hour 5 --max-failures-total 20
+      -- --env {{ cma_env }}
+  changed_when: true

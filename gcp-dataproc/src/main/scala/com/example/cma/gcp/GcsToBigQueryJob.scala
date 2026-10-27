@@ -30,7 +30,7 @@ import scala.util.Try
  *   --class=com.example.cma.gcp.GcsToBigQueryJob --jars=gs://<artifacts>/gcp-dataproc-all.jar \
  *   -- --env prod --business-date 2026-10-26
  */
-object GcsToBigQueryJob extends SparkJob {
+class GcsToBigQuery(warehouse: WarehouseIO.Factory) extends SparkJob {
   val appName        = "cma-deal-gcs-to-bq"
   val configResource = "gcp-dataproc"
   override val requiredConfig: Seq[String] = Seq("gcp.project", "gcs.landing", "gcs.temp-bucket")
@@ -47,7 +47,7 @@ object GcsToBigQueryJob extends SparkJob {
 
   def run(spark: SparkSession, args: JobArgs, conf: Config): Either[PipelineError, JobSummary] = {
     val retry = RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms"))
-    val bq    = new BigQueryIO(spark, conf, retry)
+    val bq    = warehouse(spark, conf, retry)
     val bd    = args.businessDate
 
     val raw = Retry.withBackoff("read-landing", retry) {
@@ -87,7 +87,7 @@ object GcsToBigQueryJob extends SparkJob {
   }
 
   /** Read the partition back from BigQuery and compare control totals with what Spark produced. */
-  private def reconcile(bq: BigQueryIO, curated: org.apache.spark.sql.DataFrame, bd: java.time.LocalDate, conf: Config) = {
+  private def reconcile(bq: WarehouseIO, curated: org.apache.spark.sql.DataFrame, bd: java.time.LocalDate, conf: Config) = {
     val expected = Reconciliation.totals(curated, Some("deal_amount"))
     val written  = bq.read(bq.table("staging", "deal_stg"), Some(s"business_date = DATE '$bd'"))
       .filter(col("business_date") === lit(Date.valueOf(bd)))
@@ -101,3 +101,6 @@ object GcsToBigQueryJob extends SparkJob {
     )
   }
 }
+
+/** Production entry point (spark main class). */
+object GcsToBigQueryJob extends GcsToBigQuery(WarehouseIO.bigQuery)

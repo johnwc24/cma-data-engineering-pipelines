@@ -1,0 +1,59 @@
+---
+# Roll back to the previously deployed release (recorded by the deploy roles).
+#   ansible-playbook -i inventories/<env> playbooks/rollback.yml [-e target=hadoop|gcp|both]
+# To go to a specific older version instead, re-run site.yml with -e release_version=<old>.
+
+- name: Roll back Hadoop edge nodes
+  hosts: hadoop_edge
+  become: true
+  gather_facts: false
+  vars:
+    cma_base_dir: /opt/cma
+    modules: [hadoop-batch, kafka-streaming]
+  tasks:
+    - name: Roll back Hadoop
+      when: (target | default('both')) in ['both', 'hadoop']
+      block:
+        - name: Read previous release markers
+          ansible.builtin.slurp:
+            src: "{{ cma_base_dir }}/{{ item }}/previous"
+          loop: "{{ modules }}"
+          register: previous
+
+        - name: Point current at the previous release
+          ansible.builtin.file:
+            src: "{{ item.content | b64decode | trim }}"
+            dest: "{{ cma_base_dir }}/{{ item.item }}/current"
+            state: link
+            force: true
+          loop: "{{ previous.results }}"
+          when: item.content | b64decode | trim | length > 0
+
+        - name: Restart the streaming job on the previous release
+          ansible.builtin.include_role:
+            name: hadoop_deploy
+            tasks_from: restart_streaming.yml
+
+- name: Roll back Google Cloud
+  hosts: gcp_control
+  gather_facts: false
+  vars:
+    modules: [gcp-dataproc, kafka-streaming]
+  tasks:
+    - name: Roll back GCP
+      when: (target | default('both')) in ['both', 'gcp']
+      block:
+        - name: Restore previous jars as current
+          ansible.builtin.command:
+            cmd: >-
+              gsutil -q cp gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/previous/{{ item }}-all.jar
+              gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/{{ item }}-all.jar
+          loop: "{{ modules }}"
+          changed_when: true
+
+        - name: Restart the streaming job on the previous jar
+          ansible.builtin.include_role:
+            name: gcp_deploy
+            tasks_from: restart_streaming.yml
+          vars:
+            release_version: rollback

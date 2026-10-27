@@ -4,7 +4,7 @@ import java.time.LocalDate
 
 import com.example.cma.common.config.JobArgs
 import com.example.cma.common.util.RetryPolicy
-import com.example.cma.gcp.BigQueryIO
+import com.example.cma.gcp.{WarehouseIO}
 import com.typesafe.config.Config
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
@@ -24,7 +24,7 @@ import org.apache.spark.sql.functions._
  *   --class=com.example.cma.streaming.KafkaToBigQueryStreamingJob \
  *   --jars=gs://<artifacts>/kafka-streaming-all.jar --max-failures-per-hour=5 -- --env prod
  */
-object KafkaToBigQueryStreamingJob extends StreamingDealJob {
+class KafkaToBigQueryStreaming(warehouse: WarehouseIO.Factory) extends StreamingDealJob {
   val appName        = "cma-deal-stream-bq"
   val configResource = "kafka-gcp"
 
@@ -38,10 +38,10 @@ object KafkaToBigQueryStreamingJob extends StreamingDealJob {
       .config("spark.sql.streaming.stopGracefullyOnShutdown", "true")
       .getOrCreate()
 
-  @transient private var io: BigQueryIO = _
+  @transient private var io: WarehouseIO = _
 
-  private def bq(spark: SparkSession, conf: Config): BigQueryIO = {
-    if (io == null) io = new BigQueryIO(spark, conf, RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms")))
+  private def bq(spark: SparkSession, conf: Config): WarehouseIO = {
+    if (io == null) io = warehouse(spark, conf, RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms")))
     io
   }
 
@@ -53,7 +53,9 @@ object KafkaToBigQueryStreamingJob extends StreamingDealJob {
 
   protected def alreadyCommitted(spark: SparkSession, conf: Config, batchId: Long): Boolean = {
     val ledger = bq(spark, conf).table("audit", "stream_batch")
-    !bq(spark, conf).read(ledger, Some(s"query_name = '$appName' AND batch_id = $batchId")).isEmpty
+    !bq(spark, conf).read(ledger, Some(s"query_name = '$appName' AND batch_id = $batchId"))
+      .filter(col("query_name") === appName && col("batch_id") === batchId)
+      .isEmpty
   }
 
   protected def writeRawEvents(spark: SparkSession, conf: Config, events: DataFrame): Unit =
@@ -73,3 +75,6 @@ object KafkaToBigQueryStreamingJob extends StreamingDealJob {
     bq(spark, conf).append(row, bq(spark, conf).table("audit", "stream_batch"))
   }
 }
+
+/** Production entry point (spark main class). */
+object KafkaToBigQueryStreamingJob extends KafkaToBigQueryStreaming(WarehouseIO.bigQuery)

@@ -1,0 +1,87 @@
+---
+# Google Cloud smoke tests. PROD (smoke_read_only) only reads metadata and data;
+# DEV/UAT additionally run the Spark job as a write-free dry run on Dataproc Serverless.
+
+- name: "[gcp] Job jars are published"
+  ansible.builtin.command:
+    cmd: "gsutil -q stat gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/{{ item }}-all.jar"
+  loop: [gcp-dataproc, kafka-streaming]
+  changed_when: false
+
+- name: "[gcp] BigQuery tables and views exist"
+  ansible.builtin.command:
+    cmd: "bq show --project_id={{ gcp_project }} {{ gcp_project }}:{{ item }}"
+  loop: "{{ bq_tables }}"
+  changed_when: false
+
+- name: "[gcp] Composer has no DAG import errors"
+  ansible.builtin.command:
+    cmd: >-
+      gcloud composer environments run {{ composer_environment }}
+      --location {{ gcp_region }} --project {{ gcp_project }} dags list-import-errors -- -o plain
+  register: import_errors
+  changed_when: false
+  failed_when: import_errors.rc != 0 or 'No data found' not in (import_errors.stdout + import_errors.stderr)
+
+- name: "[gcp] Expected DAGs are registered"
+  ansible.builtin.command:
+    cmd: >-
+      gcloud composer environments run {{ composer_environment }}
+      --location {{ gcp_region }} --project {{ gcp_project }} dags list -- -o plain
+  register: dag_list
+  changed_when: false
+  failed_when: expected_dags | reject('in', dag_list.stdout + dag_list.stderr) | list | length > 0
+
+- name: "[gcp] Managed Kafka -> BigQuery streaming job is running"
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataproc jobs list --project {{ gcp_project }} --region {{ gcp_region }}
+      --cluster {{ dataproc_streaming_cluster }} --state-filter active
+      --filter "labels.app={{ streaming_job_label }}" --format "value(reference.jobId)"
+  register: stream_jobs
+  changed_when: false
+  failed_when: stream_jobs.stdout_lines | length != 1
+
+- name: "[gcp] Stream lag, last DQ assertion run and last staging load"
+  ansible.builtin.command:
+    cmd: >-
+      bq query --project_id={{ gcp_project }} --use_legacy_sql=false --format=csv --quiet
+      "SELECT
+         (SELECT TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(committed_at), MINUTE) FROM cma_audit.stream_batch
+          WHERE DATE(committed_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)) AS stream_lag_min,
+         (SELECT LOGICAL_AND(passed) FROM cma_audit.sql_assertions
+          WHERE business_date = (SELECT MAX(business_date) FROM cma_audit.sql_assertions)) AS last_assertions_passed,
+         (SELECT DATE_DIFF(CURRENT_DATE(), MAX(business_date), DAY) FROM cma_staging.deal_stg
+          WHERE business_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY)) AS staging_age_days"
+  register: bq_health
+  changed_when: false
+
+- name: "[gcp] Evaluate data health"
+  vars:
+    health: "{{ (bq_health.stdout_lines | last).split(',') }}"
+  ansible.builtin.assert:
+    that:
+      - health[0] | int <= max_stream_lag_minutes
+      - health[1] | lower == 'true'
+      - health[2] | int <= 4  # allows for weekends and bank holidays
+    fail_msg: "stream_lag_min={{ health[0] }} last_assertions_passed={{ health[1] }} staging_age_days={{ health[2] }}"
+
+- name: "[gcp] BigQuery pipeline SQL compiles against this environment (dry run, no cost)"
+  ansible.builtin.command:
+    cmd: "{{ playbook_dir }}/../../ci/bq_dry_run.sh {{ gcp_project }}"
+  changed_when: false
+
+- name: "[gcp] Dry run of the GCS -> BigQuery Spark job on Dataproc Serverless"
+  when: not smoke_read_only | bool
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataproc batches submit spark
+      --project {{ gcp_project }} --region {{ gcp_region }}
+      --batch cma-smoke-{{ ansible_date_time.epoch }}
+      --class com.example.cma.gcp.GcsToBigQueryJob
+      --jars gs://{{ gcp_artifacts_bucket }}/jars/gcp-dataproc/current/gcp-dataproc-all.jar
+      --version 2.2 --labels purpose=smoke-test
+      -- --env {{ cma_env }} --business-date {{ smoke_business_date }} --dry-run
+  register: gcp_dry_run
+  changed_when: false
+  failed_when: gcp_dry_run.rc != 0 and 'exited with code 3' not in gcp_dry_run.stderr

@@ -1,0 +1,18 @@
+---
+cma_env: dev
+hive_env_suffix: "_dev"
+hive_jdbc_url: "jdbc:hive2://hive-dev.example.internal:10000/default;principal=hive/_HOST@EXAMPLE.INTERNAL;ssl=true"
+spark_queue: "cma_dev"
+kafka_keytab_path: "/etc/security/keytabs/cma-dev.keytab"
+
+gcp_project: cma-data-dev
+gcp_region: europe-west2
+gcp_location: europe-west2
+gcp_artifacts_bucket: cma-data-dev-artifacts
+composer_environment: cma-composer-dev
+dataproc_streaming_cluster: cma-streaming-dev
+
+nexus_repository_url: "https://nexus.example.internal/repository/cma-releases"
+
+# Smoke tests may run write-free Spark dry runs and BigQuery dry runs here
+smoke_read_only: false

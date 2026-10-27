@@ -1,0 +1,18 @@
+---
+cma_env: uat
+hive_env_suffix: "_uat"
+hive_jdbc_url: "jdbc:hive2://hive-uat.example.internal:10000/default;principal=hive/_HOST@EXAMPLE.INTERNAL;ssl=true"
+spark_queue: "cma_uat"
+kafka_keytab_path: "/etc/security/keytabs/cma-uat.keytab"
+
+gcp_project: cma-data-uat
+gcp_region: europe-west2
+gcp_location: europe-west2
+gcp_artifacts_bucket: cma-data-uat-artifacts
+composer_environment: cma-composer-uat
+dataproc_streaming_cluster: cma-streaming-uat
+
+nexus_repository_url: "https://nexus.example.internal/repository/cma-releases"
+
+# Smoke tests may run write-free Spark dry runs and BigQuery dry runs here
+smoke_read_only: false

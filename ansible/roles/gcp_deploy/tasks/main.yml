@@ -1,0 +1,105 @@
+---
+# Deploys a release to Google Cloud:
+#   jars -> GCS (versioned + current, previous kept) -> BigQuery DDL -> Composer DAGs + SQL -> restart stream
+# Failures restore the previous jars in GCS (block/rescue).
+
+- name: Create working directory
+  ansible.builtin.file:
+    path: "{{ work_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Download job jars from Nexus
+  ansible.builtin.get_url:
+    url: "{{ nexus_repository_url }}/com/example/cma/{{ item }}/{{ release_version }}/{{ item }}-{{ release_version }}-all.jar"
+    dest: "{{ work_dir }}/{{ item }}-all.jar"
+    url_username: "{{ lookup('ansible.builtin.env', 'NEXUS_USER') }}"
+    url_password: "{{ lookup('ansible.builtin.env', 'NEXUS_PASS') }}"
+    mode: "0644"
+  register: jar_download
+  retries: 3
+  delay: 10
+  until: jar_download is succeeded
+  loop: "{{ gcp_modules }}"
+
+- name: Deploy release (rolls back automatically on failure)
+  block:
+    - name: Keep the current jars as previous (for rollback)
+      ansible.builtin.command:
+        cmd: >-
+          gsutil -q cp gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/{{ item }}-all.jar
+          gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/previous/{{ item }}-all.jar
+      loop: "{{ gcp_modules }}"
+      register: keep_previous
+      failed_when: keep_previous.rc != 0 and 'No URLs matched' not in keep_previous.stderr
+      changed_when: keep_previous.rc == 0
+
+    - name: Upload versioned and current jars
+      ansible.builtin.shell:
+        cmd: >-
+          gsutil -q cp {{ work_dir }}/{{ item }}-all.jar gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/{{ release_version }}/ &&
+          gsutil -q cp {{ work_dir }}/{{ item }}-all.jar gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/
+        executable: /bin/bash
+      loop: "{{ gcp_modules }}"
+      changed_when: true
+
+    - name: Render BigQuery DDL for this environment
+      ansible.builtin.template:
+        src: "{{ repo_root }}/bigquery/ddl/01_datasets_and_tables.sql"
+        dest: "{{ work_dir }}/ddl.sql"
+        mode: "0644"
+      vars:
+        project: "{{ gcp_project }}"
+        location: "{{ gcp_location }}"
+
+    - name: Apply BigQuery DDL (idempotent)
+      ansible.builtin.shell:
+        cmd: "bq query --project_id={{ gcp_project }} --use_legacy_sql=false --quiet < {{ work_dir }}/ddl.sql"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Upload Airflow DAGs to Composer
+      ansible.builtin.command:
+        cmd: >-
+          gcloud composer environments storage dags import
+          --environment {{ composer_environment }} --location {{ gcp_region }} --project {{ gcp_project }}
+          --source {{ repo_root }}/airflow/dags/{{ item }}
+      loop:
+        - cma_common
+        - cma_deals_gcp.py
+        - cma_deals_hadoop.py
+        - cma_ops_monitoring.py
+      changed_when: true
+
+    - name: Upload BigQuery SQL used by the DAGs (dags/sql)
+      ansible.builtin.command:
+        cmd: >-
+          gcloud composer environments storage dags import
+          --environment {{ composer_environment }} --location {{ gcp_region }} --project {{ gcp_project }}
+          --source {{ repo_root }}/bigquery/{{ item }} --destination sql
+      loop: [pipelines, dq]
+      changed_when: true
+
+    - name: Restart the Managed Kafka -> BigQuery streaming job
+      ansible.builtin.include_tasks: restart_streaming.yml
+      when: restart_streaming | bool
+
+  rescue:
+    - name: Restore previous jars
+      ansible.builtin.command:
+        cmd: >-
+          gsutil -q cp gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/previous/{{ item }}-all.jar
+          gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/{{ item }}-all.jar
+      loop: "{{ gcp_modules }}"
+      changed_when: true
+      failed_when: false
+
+    - name: Fail the play so Jenkins reports the failed deployment
+      ansible.builtin.fail:
+        msg: "GCP deployment of {{ release_version }} failed; previous jars restored."
+
+  always:
+    - name: Remove working directory
+      ansible.builtin.file:
+        path: "{{ work_dir }}"
+        state: absent

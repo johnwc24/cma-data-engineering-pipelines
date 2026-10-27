@@ -1,0 +1,18 @@
+---
+cma_env: prod
+hive_env_suffix: ""
+hive_jdbc_url: "jdbc:hive2://hive-prod.example.internal:10000/default;principal=hive/_HOST@EXAMPLE.INTERNAL;ssl=true"
+spark_queue: "cma_prod"
+kafka_keytab_path: "/etc/security/keytabs/cma-prod.keytab"
+
+gcp_project: cma-data-prod
+gcp_region: europe-west2
+gcp_location: europe-west2
+gcp_artifacts_bucket: cma-data-prod-artifacts
+composer_environment: cma-composer-prod
+dataproc_streaming_cluster: cma-streaming-prod
+
+nexus_repository_url: "https://nexus.example.internal/repository/cma-releases"
+
+# PROD smoke tests are strictly read-only: no data is written, only checked
+smoke_read_only: true

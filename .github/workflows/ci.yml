@@ -1,0 +1,108 @@
+# Continuous integration on every push and pull request.
+# Deployments are handled by the Jenkinsfile (approvals, Ansible, rollback); this workflow
+# proves the code compiles, the tests pass and the DAGs / playbooks are valid.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  scala:
+    name: Maven build & Scala tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build, test and package (all modules)
+        run: mvn -B -ntp verify
+
+      - name: Publish test report
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: "**/target/surefire-reports/*.xml"
+          check_name: Scala test results
+
+      - name: Upload job jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: spark-job-jars
+          path: "**/target/*-all.jar"
+          retention-days: 14
+
+  airflow:
+    name: Airflow DAG tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: airflow/requirements-dev.txt
+
+      - name: Install Airflow (Composer-aligned constraints)
+        run: |
+          pip install -r airflow/requirements-dev.txt \
+            --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
+
+      - name: Lint
+        run: ruff check airflow
+
+      - name: DAG integrity and unit tests
+        env:
+          CMA_ENV: dev
+          AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+          AIRFLOW__CORE__UNIT_TEST_MODE: "true"
+        run: |
+          airflow db migrate > /dev/null
+          pytest -q airflow/tests
+
+  ansible:
+    name: Ansible lint & syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ansible
+        run: |
+          pip install ansible-core ansible-lint
+          ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: Syntax check every environment
+        working-directory: ansible
+        run: |
+          for env in dev uat prod; do
+            ansible-playbook -i inventories/$env playbooks/site.yml --syntax-check
+            ansible-playbook -i inventories/$env playbooks/rollback.yml --syntax-check
+            ansible-playbook -i inventories/$env playbooks/smoke_test.yml --syntax-check
+          done
+
+      - name: Lint
+        working-directory: ansible
+        run: ansible-lint playbooks roles

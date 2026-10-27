@@ -51,11 +51,9 @@ abstract class StreamingDealJob extends SparkJob {
     Map("kafka.bootstrap.servers" -> conf.getString("kafka.bootstrap-servers")) ++ extra
   }
 
-  def run(spark: SparkSession, args: JobArgs, conf: Config): Either[PipelineError, JobSummary] = {
-    val retry = RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms"))
-    spark.streams.addListener(new ProgressLogger(appName))
-
-    val source = spark.readStream
+  /** Kafka source. Overridden in local tests with an in-memory stream of the same shape. */
+  protected def readSource(spark: SparkSession, conf: Config): DataFrame =
+    spark.readStream
       .format("kafka")
       .options(kafkaOptions(conf))
       .option("subscribe", conf.getString("kafka.topic"))
@@ -65,11 +63,19 @@ abstract class StreamingDealJob extends SparkJob {
       .option("failOnDataLoss", "true")
       .load()
 
+  /** Publish rejected events to the dead-letter topic. Overridden in local tests. */
+  protected def publishDeadLetters(conf: Config, deadLetters: DataFrame): Unit =
+    deadLetters.write.format("kafka").options(kafkaOptions(conf)).option("topic", conf.getString("kafka.dlq-topic")).save()
+
+  /** Builds and starts the query; separated from `run` so tests can drive it with processAllAvailable(). */
+  def startQuery(spark: SparkSession, args: JobArgs, conf: Config): StreamingQuery = {
+    val retry = RetryPolicy(conf.getInt("retry.max-attempts"), conf.getLong("retry.initial-delay-ms"))
+
     // Typed function value: Scala 2.12 cannot pick between the Scala and Java foreachBatch overloads for a lambda
     val handleBatch: (DataFrame, Long) => Unit = (batch, batchId) => processBatch(spark, conf, retry, batch, batchId)
 
-    val query: StreamingQuery = DealEvents
-      .parse(source)
+    DealEvents
+      .parse(readSource(spark, conf))
       .writeStream
       .queryName(appName)
       .option("checkpointLocation", conf.getString("stream.checkpoint"))
@@ -79,7 +85,11 @@ abstract class StreamingDealJob extends SparkJob {
       )
       .foreachBatch(handleBatch)
       .start()
+  }
 
+  def run(spark: SparkSession, args: JobArgs, conf: Config): Either[PipelineError, JobSummary] = {
+    spark.streams.addListener(new ProgressLogger(appName))
+    val query = startQuery(spark, args, conf)
     try {
       query.awaitTermination()
       Right(JobSummary(args.runId, Map("last_batch_id" -> Option(query.lastProgress).map(_.batchId).getOrElse(-1L))))
@@ -114,8 +124,7 @@ abstract class StreamingDealJob extends SparkJob {
 
           if (result.rejectedRows > 0) {
             sinkWithRetry("dlq", retry)(
-              DealEvents.toDeadLetters(result.rejected, conf.getString("kafka.topic"))
-                .write.format("kafka").options(kafkaOptions(conf)).option("topic", conf.getString("kafka.dlq-topic")).save()
+              publishDeadLetters(conf, DealEvents.toDeadLetters(result.rejected, conf.getString("kafka.topic")))
             )
             sinkWithRetry("quarantine", retry)(writeQuarantine(spark, conf, result.rejected, bd))
           }
