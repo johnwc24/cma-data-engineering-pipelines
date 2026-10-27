@@ -1,0 +1,32 @@
+{
+  "name": "CMA deal events: Pub/Sub to BigQuery",
+  "description": "Validates deal events with the shared CMA deal rules, de-duplicates by event_id, writes valid events to BigQuery and everything else to a dead-letter topic.",
+  "streaming": true,
+  "parameters": [
+    {
+      "name": "inputSubscription",
+      "label": "Input Pub/Sub subscription",
+      "helpText": "projects/<project>/subscriptions/<name>",
+      "regexes": ["^projects\\/[^\\n\\r\\/]+\\/subscriptions\\/[^\\n\\r\\/]+$"]
+    },
+    {
+      "name": "outputTable",
+      "label": "BigQuery output table",
+      "helpText": "<project>:<dataset>.<table>",
+      "regexes": ["^[^:]+:[^.]+[.].+$"]
+    },
+    {
+      "name": "deadLetterTopic",
+      "label": "Dead-letter Pub/Sub topic",
+      "helpText": "projects/<project>/topics/<name>",
+      "regexes": ["^projects\\/[^\\n\\r\\/]+\\/topics\\/[^\\n\\r\\/]+$"]
+    },
+    {
+      "name": "dedupMinutes",
+      "label": "De-duplication window (minutes)",
+      "helpText": "How long an event_id is remembered. Default 10.",
+      "isOptional": true,
+      "regexes": ["^[0-9]+$"]
+    }
+  ]
+}

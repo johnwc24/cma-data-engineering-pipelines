@@ -2,6 +2,7 @@
 
 * stream_freshness   - the Kafka -> BigQuery stream committed a batch in the last 15 minutes
 * stream_dlq_rate    - fewer than 5% of streamed events went to the dead-letter topic in the last hour
+* dataflow_freshness - the Pub/Sub -> Dataflow -> BigQuery pipeline wrote events in the last 30 minutes
 * hive_to_bq_migration (manual) - migrate and reconcile Hadoop partitions to BigQuery
 
 Failures alert through the shared on_failure_callback.
@@ -54,6 +55,17 @@ with DAG(
             SELECT IFNULL(SAFE_DIVIDE(SUM(rejected), SUM(events)), 0) < 0.05
             FROM {LEDGER}
             WHERE committed_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+        """,
+    )
+
+    BigQueryCheckOperator(
+        task_id="dataflow_freshness",
+        use_legacy_sql=False,
+        location=gcp["region"],
+        sql=f"""
+            SELECT TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(processed_at), MINUTE) < 30
+            FROM `{gcp['project']}.cma_raw.deal_event_dataflow`
+            WHERE DATE(processed_at) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
         """,
     )
 

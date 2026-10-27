@@ -32,6 +32,7 @@ trait EmbeddedHiveSession extends BeforeAndAfterAll { self: Suite =>
       .config("spark.sql.shuffle.partitions", "2")
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.ansi.enabled", "false")
+      .config("spark.sql.legacy.timeParserPolicy", "CORRECTED")
       .config("spark.sql.warehouse.dir", new File(root, "warehouse").getAbsolutePath)
       .config("spark.hadoop.javax.jdo.option.ConnectionURL", derbyUrl)
       .config("spark.hadoop.datanucleus.schema.autoCreateAll", "true")

@@ -59,6 +59,9 @@ trait SparkJob {
         Try(session.getOrElse(buildSession(args, conf))).toEither.left
           .map(PipelineError.classify)
           .flatMap { spark =>
+            // Invalid dates (e.g. 2026-02-30) must become NULL and be quarantined, not throw
+            // SparkUpgradeException under the default EXCEPTION policy.
+            spark.conf.set("spark.sql.legacy.timeParserPolicy", "CORRECTED")
             try Try(run(spark, args, conf)).toEither.left.map(PipelineError.classify).flatMap(identity)
             finally if (ownsSession) Try(spark.stop())
           }

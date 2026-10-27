@@ -9,7 +9,7 @@
   gather_facts: false
   vars:
     cma_base_dir: /opt/cma
-    modules: [hadoop-batch, kafka-streaming]
+    modules: [hadoop-batch, kafka-streaming, file-ingestion]
   tasks:
     - name: Roll back Hadoop
       when: (target | default('both')) in ['both', 'hadoop']
@@ -38,7 +38,7 @@
   hosts: gcp_control
   gather_facts: false
   vars:
-    modules: [gcp-dataproc, kafka-streaming]
+    modules: [gcp-dataproc, kafka-streaming, file-ingestion]
   tasks:
     - name: Roll back GCP
       when: (target | default('both')) in ['both', 'gcp']
@@ -57,3 +57,22 @@
             tasks_from: restart_streaming.yml
           vars:
             release_version: rollback
+
+        - name: Read the previous Dataflow release
+          ansible.builtin.command:
+            cmd: "gsutil cat gs://{{ gcp_artifacts_bucket }}/dataflow/previous_release"
+          register: previous_dataflow
+          changed_when: false
+          failed_when: false
+
+        - name: Update the Dataflow job back to the previous template
+          when: previous_dataflow.rc == 0 and previous_dataflow.stdout | trim | length > 0
+          ansible.builtin.command:
+            cmd: >-
+              gcloud dataflow flex-template run cma-deal-events --update
+              --project {{ gcp_project }} --region {{ gcp_region }}
+              --template-file-gcs-location gs://{{ gcp_artifacts_bucket }}/dataflow/templates/deal-events-{{ previous_dataflow.stdout | trim }}.json
+              --parameters inputSubscription=projects/{{ gcp_project }}/subscriptions/cma-deal-events-dataflow
+              --parameters outputTable={{ gcp_project }}:cma_raw.deal_event_dataflow
+              --parameters deadLetterTopic=projects/{{ gcp_project }}/topics/cma-deal-events-dlq
+          changed_when: true

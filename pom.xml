@@ -20,6 +20,7 @@
     <module>gcp-dataproc</module>
     <module>kafka-streaming</module>
     <module>file-ingestion</module>
+    <module>dataflow-beam</module>
   </modules>
 
   <properties>

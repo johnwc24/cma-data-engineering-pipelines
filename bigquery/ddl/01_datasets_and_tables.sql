@@ -84,6 +84,15 @@ CREATE TABLE IF NOT EXISTS `{{ project }}.cma_raw.deal_event_stream` (
   kafka_topic STRING, kafka_partition INT64, kafka_offset INT64, kafka_timestamp TIMESTAMP, ingest_date DATE
 ) PARTITION BY ingest_date CLUSTER BY event_id;
 
+-- Written by the Dataflow pipeline (Pub/Sub -> Beam -> BigQuery Storage Write API)
+CREATE TABLE IF NOT EXISTS `{{ project }}.cma_raw.deal_event_dataflow` (
+  deal_id STRING NOT NULL, deal_version INT64, deal_name STRING, borrower_party_id STRING, product_type STRING,
+  deal_role STRING, currency STRING, deal_amount NUMERIC(20, 2), bank_share_amount NUMERIC(20, 2),
+  trade_date DATE, settlement_date DATE, booking_system STRING, deal_status STRING, last_updated_ts TIMESTAMP,
+  event_id STRING NOT NULL, event_type STRING, event_ts TIMESTAMP, pubsub_message_id STRING, processed_at TIMESTAMP
+) PARTITION BY DATE(processed_at) CLUSTER BY deal_id
+OPTIONS (description = 'Validated deal events from Pub/Sub via Dataflow; rejects go to the dead-letter topic');
+
 CREATE TABLE IF NOT EXISTS `{{ project }}.cma_quarantine.deal_reject` (
   deal_id STRING, deal_version STRING, deal_name STRING, borrower_party_id STRING, product_type STRING,
   deal_role STRING, currency STRING, deal_amount STRING, bank_share_amount STRING, trade_date STRING,

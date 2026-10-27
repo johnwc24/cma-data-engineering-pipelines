@@ -16,6 +16,7 @@ trait SparkTestSession extends BeforeAndAfterAll { self: Suite =>
     .config("spark.ui.enabled", "false")
     .config("spark.sql.session.timeZone", "UTC")
     .config("spark.sql.ansi.enabled", "false")
+      .config("spark.sql.legacy.timeParserPolicy", "CORRECTED")
     .config("spark.sql.warehouse.dir", Files.createTempDirectory("spark-warehouse").toString)
     .getOrCreate()
 

@@ -5,7 +5,7 @@
 - name: "[gcp] Job jars are published"
   ansible.builtin.command:
     cmd: "gsutil -q stat gs://{{ gcp_artifacts_bucket }}/jars/{{ item }}/current/{{ item }}-all.jar"
-  loop: [gcp-dataproc, kafka-streaming]
+  loop: [gcp-dataproc, kafka-streaming, file-ingestion]
   changed_when: false
 
 - name: "[gcp] BigQuery tables and views exist"
@@ -41,6 +41,15 @@
   register: stream_jobs
   changed_when: false
   failed_when: stream_jobs.stdout_lines | length != 1
+
+- name: "[gcp] Dataflow deal-events job is running"
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataflow jobs list --project {{ gcp_project }} --region {{ gcp_region }}
+      --status active --filter "name=cma-deal-events" --format "value(id)"
+  register: dataflow_jobs
+  changed_when: false
+  failed_when: dataflow_jobs.stdout_lines | length != 1
 
 - name: "[gcp] Stream lag, last DQ assertion run and last staging load"
   ansible.builtin.command:

@@ -1,0 +1,58 @@
+---
+# Build the Dataflow Flex Template for this release and update the running streaming job in place.
+# `--update` keeps in-flight state (dedup window, unacked messages) across releases.
+
+- name: Download the Dataflow job jar from Nexus
+  ansible.builtin.get_url:
+    url: "{{ nexus_repository_url }}/com/example/cma/dataflow-beam/{{ release_version }}/dataflow-beam-{{ release_version }}-all.jar"
+    dest: "{{ work_dir }}/dataflow-beam-all.jar"
+    url_username: "{{ lookup('ansible.builtin.env', 'NEXUS_USER') }}"
+    url_password: "{{ lookup('ansible.builtin.env', 'NEXUS_PASS') }}"
+    mode: "0644"
+  register: dataflow_jar
+  retries: 3
+  delay: 10
+  until: dataflow_jar is succeeded
+
+- name: Build the Flex Template (versioned spec in GCS, image in Artifact Registry)
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataflow flex-template build
+      gs://{{ gcp_artifacts_bucket }}/dataflow/templates/deal-events-{{ release_version }}.json
+      --project {{ gcp_project }}
+      --image-gcr-path {{ gcp_region }}-docker.pkg.dev/{{ gcp_project }}/cma/dataflow-deal-events:{{ release_version }}
+      --sdk-language JAVA --flex-template-base-image JAVA17
+      --jar {{ work_dir }}/dataflow-beam-all.jar
+      --env FLEX_TEMPLATE_JAVA_MAIN_CLASS=com.example.cma.dataflow.DealEventsPubSubToBigQuery
+      --metadata-file {{ repo_root }}/dataflow-beam/flex-template/metadata.json
+  changed_when: true
+
+- name: Find the running Dataflow job
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataflow jobs list --project {{ gcp_project }} --region {{ gcp_region }}
+      --status active --filter "name=cma-deal-events" --format "value(id)"
+  register: dataflow_running
+  changed_when: false
+
+- name: Launch or update the streaming job
+  ansible.builtin.command:
+    cmd: >-
+      gcloud dataflow flex-template run cma-deal-events
+      --project {{ gcp_project }} --region {{ gcp_region }}
+      --template-file-gcs-location gs://{{ gcp_artifacts_bucket }}/dataflow/templates/deal-events-{{ release_version }}.json
+      --service-account-email dataflow-cma@{{ gcp_project }}.iam.gserviceaccount.com
+      --subnetwork regions/{{ gcp_region }}/subnetworks/dataflow --disable-public-ips
+      --enable-streaming-engine --max-workers 10
+      --additional-user-labels release={{ release_version | replace('.', '-') | lower }}
+      --parameters inputSubscription=projects/{{ gcp_project }}/subscriptions/cma-deal-events-dataflow
+      --parameters outputTable={{ gcp_project }}:cma_raw.deal_event_dataflow
+      --parameters deadLetterTopic=projects/{{ gcp_project }}/topics/cma-deal-events-dlq
+      {{ '--update' if dataflow_running.stdout_lines | length > 0 else '' }}
+  changed_when: true
+
+- name: Record this release as the current Dataflow release
+  ansible.builtin.shell:
+    cmd: "echo '{{ release_version }}' | gsutil -q cp - gs://{{ gcp_artifacts_bucket }}/dataflow/current_release"
+    executable: /bin/bash
+  changed_when: true

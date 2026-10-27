@@ -84,6 +84,20 @@
       ansible.builtin.include_tasks: restart_streaming.yml
       when: restart_streaming | bool
 
+    - name: Record the Dataflow release being replaced (for rollback)
+      ansible.builtin.command:
+        cmd: >-
+          gsutil -q cp gs://{{ gcp_artifacts_bucket }}/dataflow/current_release
+          gs://{{ gcp_artifacts_bucket }}/dataflow/previous_release
+      register: record_previous
+      changed_when: record_previous.rc == 0
+      failed_when: record_previous.rc != 0 and 'No URLs matched' not in record_previous.stderr
+      when: deploy_dataflow | bool
+
+    - name: Build and roll out the Dataflow (Beam) pipeline
+      ansible.builtin.include_tasks: dataflow.yml
+      when: deploy_dataflow | bool
+
   rescue:
     - name: Restore previous jars
       ansible.builtin.command:
