@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS cma_quarantine${env_suffix}.deal_reject (
   run_id             STRING,
   source_system      STRING
 )
-COMMENT 'Deals rejected by validation; fix at source and replay'
+COMMENT 'Deals rejected by validation - fix at source and replay'
 PARTITIONED BY (business_date DATE)
 STORED AS PARQUET
 TBLPROPERTIES ('retention.days'='90');

@@ -1,0 +1,6 @@
+{"party_id":"PTY-001","agency":"S&P","rating":"BBB+","outlook":"Stable","rated_on":"2026-10-20"}
+{"party_id":"PTY-002","agency":"Moody's","rating":"A3","outlook":"Positive","rated_on":"2026-10-22"}
+{"party_id":"PTY-003","agency":"Fitch","rating":"BB","outlook":"Negative","rated_on":"22/10/2026"}
+{"party_id":null,"agency":"Fitch","rating":"A","outlook":"Stable","rated_on":"2026-10-23"}
+{"party_id":"PTY-005","agency":"S&P","rating":"AA-","outlook":"Stable","rated_on":"not-a-date"}
+{this is not json
