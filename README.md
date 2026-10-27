@@ -1,5 +1,7 @@
 # CMA Data Engineering Pipelines
 
+[![CI](https://github.com/johnwc24/cma-data-engineering-pipelines/actions/workflows/ci.yml/badge.svg)](https://github.com/johnwc24/cma-data-engineering-pipelines/actions/workflows/ci.yml)
+
 Example production-style data pipelines for a **Capital Markets & Advisory (CMA)** data platform in a
 global bank, built with **Spark/Scala on Hadoop and Google Cloud**, **Kafka**, **Apache Beam / Dataflow**,
 **BigQuery**, **Airflow / Cloud Composer**, **Maven**, **Jenkins** and **Ansible**.
@@ -27,9 +29,17 @@ with data-quality gates, quarantine, reconciliation and audit evidence at every 
 | 9 | Monthly league-table data product (front office / Tableau) | GCP | BigQuery SQL | `bigquery/pipelines` |
 | 10 | Post-load DQ assertions with audit evidence | GCP | BigQuery `ASSERT` | `bigquery/dq` |
 | 11 | Pipeline reconciliation notebook | GCP, Hadoop, local | PySpark, Jupyter, papermill | `notebooks` |
+| 12 | PostgreSQL → Delta incremental ingestion (watermark, look-back, MERGE) | Hadoop or GCP | Spark JDBC, Delta | `data-products` |
+| 13 | Booking-system break reconciliation with ageing and resolution | Hadoop or GCP | Spark, Delta MERGE | `data-products` |
+| 14 | Vendor feed: manifest checksum, licence enforcement, daily snapshots | Hadoop or GCP | Spark, Delta | `data-products` |
+| 15 | Point-in-time borrower features for data science | Hadoop or GCP | Spark (as-of joins over SCD2) | `data-products` |
 
-Orchestration: `airflow/dags` — `cma_deals_gcp` (Composer), `cma_deals_hadoop`, `cma_stream_health`,
-`cma_hive_to_bq_migration`.
+Orchestration: `airflow/dags` — `cma_deals_gcp` (Composer), `cma_deals_hadoop`, `cma_data_products`
+(Dataproc Serverless), `cma_stream_health`, `cma_hive_to_bq_migration`.
+
+Further reading: [architecture and design decisions](docs/architecture.md) ·
+[runbook](docs/runbook.md) · [source-to-target mapping](docs/source-to-target-mapping.md) ·
+[interview guide](docs/interview-guide.md)
 
 ```mermaid
 flowchart LR
@@ -104,6 +114,8 @@ Everything runs **locally with no cluster, cloud account or Kafka broker**:
 | Kafka → Hive / BigQuery | `MemoryStream` in place of Kafka, real checkpointing, foreachBatch, batch ledger and DLQ |
 | Dataflow / Beam | DirectRunner + `PAssert` |
 | File ingestion | Avro and Excel fixtures generated in the tests; every source/target combination |
+| PostgreSQL ingestion | In-memory H2 in PostgreSQL mode: first load, increments, late commits, bad table, credentials |
+| Breaks, vendor feed, features | Multi-day runs on Delta: break ageing/resolution, checksum and licence failures, leakage tests |
 | BigQuery SQL | Rendered as Airflow/Ansible would and checked for structure (pytest); real dry run in Jenkins |
 | Airflow | DagBag integrity, SQL include rendering, exit-code retry policy |
 | End to end | CI `spark-submit`s the Hadoop job on sample data, then runs the reconciliation notebook against the output |
@@ -153,13 +165,14 @@ gcp-dataproc/      Spark/Scala on Dataproc: GCS -> BigQuery, Hive -> BigQuery mi
 kafka-streaming/   Spark Structured Streaming: Kafka -> Hive, Managed Kafka -> BigQuery
 dataflow-beam/     Apache Beam (Scala) on Dataflow: Pub/Sub -> BigQuery, Flex Template
 file-ingestion/    CSV/JSON/Avro/Excel -> Parquet/Delta, Hadoop or GCP
+data-products/     PostgreSQL ingestion, break reconciliation, vendor feeds, point-in-time features
 bigquery/          DDL, SCD2 merge, data product, DQ assertions, SQL tests
 airflow/           DAGs, shared config/callbacks/operators, tests
 notebooks/         PySpark reconciliation notebook (+ generator and tests)
 ansible/           inventories (dev/uat/prod), deploy / rollback / smoke-test roles
 ci/                Maven settings, BigQuery dry run, CI failure annotations
 data/sample/       synthetic deals (with deliberate bad rows), reference data, events
-docs/              runbook, source-to-target mapping
+docs/              architecture, runbook, source-to-target mapping, interview guide
 ```
 
 ## Mapping to the role
@@ -174,3 +187,7 @@ docs/              runbook, source-to-target mapping
 | Unit and integration testing, automated build and deploy | tests in every module, CI, Jenkins, Ansible |
 | Git, Jenkins, Ansible, Jira-ready delivery | this repo, `Jenkinsfile`, `ansible/` |
 | Lineage, ownership, permitted use, documentation | `run_id` / `_source_file` lineage columns, table options, `docs/` |
+| PostgreSQL or equivalent databases | `JdbcIncrementalIngestionJob` |
+| Third-party data sources, licensing | `VendorFeedJob` |
+| Syndication / transaction lifecycle, debugging data differences | `BreakReconciliationJob`, reconciliation notebook |
+| Data-science use cases | `PointInTimeFeaturesJob` |
