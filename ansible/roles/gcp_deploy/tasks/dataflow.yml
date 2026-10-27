@@ -53,6 +53,6 @@
 
 - name: Record this release as the current Dataflow release
   ansible.builtin.shell:
-    cmd: "echo '{{ release_version }}' | gsutil -q cp - gs://{{ gcp_artifacts_bucket }}/dataflow/current_release"
+    cmd: "set -o pipefail && echo '{{ release_version }}' | gsutil -q cp - gs://{{ gcp_artifacts_bucket }}/dataflow/current_release"
     executable: /bin/bash
   changed_when: true

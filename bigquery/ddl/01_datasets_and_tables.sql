@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS `{{ project }}.cma_raw.deal_event_dataflow` (
   trade_date DATE, settlement_date DATE, booking_system STRING, deal_status STRING, last_updated_ts TIMESTAMP,
   event_id STRING NOT NULL, event_type STRING, event_ts TIMESTAMP, pubsub_message_id STRING, processed_at TIMESTAMP
 ) PARTITION BY DATE(processed_at) CLUSTER BY deal_id
-OPTIONS (description = 'Validated deal events from Pub/Sub via Dataflow; rejects go to the dead-letter topic');
+OPTIONS (description = 'Validated deal events from Pub/Sub via Dataflow (rejects go to the dead-letter topic)');
 
 CREATE TABLE IF NOT EXISTS `{{ project }}.cma_quarantine.deal_reject` (
   deal_id STRING, deal_version STRING, deal_name STRING, borrower_party_id STRING, product_type STRING,
